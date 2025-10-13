@@ -2,7 +2,6 @@ import type {
   AIAdapter,
   ChatCompletionOptions,
   ChatCompletionResult,
-  ChatCompletionChunk,
   StreamChunk,
   TextGenerationOptions,
   TextGenerationResult,
@@ -201,7 +200,26 @@ export class AI<T extends AdapterMap = AdapterMap> {
 
     for (const fallback of fallbacks) {
       try {
-        yield* operation(fallback);
+        const iterator = operation(fallback);
+        let hasError = false;
+        let errorInfo: any = null;
+
+        // Manually iterate to catch errors during streaming
+        for await (const chunk of iterator) {
+          // Check if this is an error chunk (StreamChunk type)
+          if ((chunk as any).type === "error") {
+            hasError = true;
+            errorInfo = (chunk as any).error;
+            break;
+          }
+          yield chunk;
+        }
+
+        // If we got an error chunk, throw it to try next fallback
+        if (hasError) {
+          throw new Error(errorInfo?.message || "Unknown error");
+        }
+
         return; // Success, exit
       } catch (error: any) {
         errors.push({
@@ -299,83 +317,6 @@ export class AI<T extends AdapterMap = AdapterMap> {
   }
 
   /**
-   * Complete a chat conversation with streaming (legacy)
-   * Supports single adapter mode with optional fallbacks
-   * @deprecated Use streamChat() for structured streaming with JSON chunks
-   */
-  async *chatStream(
-    options:
-      | ChatOptionsWithAdapter<T>
-      | ChatOptionsWithFallback<T>
-  ): AsyncIterable<ChatCompletionChunk> {
-    // Check if this is fallback-only mode (no primary adapter specified)
-    if (!("adapter" in options)) {
-      // Fallback-only mode
-      const { fallbacks, ...restOptions } = options;
-      const fallbackList = fallbacks && fallbacks.length > 0 ? fallbacks : this.fallbacks;
-
-      if (!fallbackList || fallbackList.length === 0) {
-        throw new Error(
-          "No fallbacks specified. Either provide fallbacks in options or configure fallbacks in constructor."
-        );
-      }
-
-      yield* this.tryStreamWithFallback(
-        fallbackList,
-        (fallback) => {
-          return this.getAdapter(fallback.adapter).chatCompletionStream({
-            ...restOptions,
-            model: fallback.model,
-            stream: true,
-          } as ChatCompletionOptions);
-        },
-        "chatStream"
-      );
-      return;
-    }
-
-    // Single adapter mode (with optional fallbacks)
-    const { adapter, model, fallbacks, ...restOptions } = options;
-
-    // Get fallback list (from options or constructor)
-    const fallbackList = fallbacks && fallbacks.length > 0
-      ? fallbacks
-      : this.fallbacks;
-
-    // Try primary adapter first
-    try {
-      yield* this.getAdapter(adapter).chatCompletionStream({
-        ...restOptions,
-        model,
-        stream: true,
-      } as ChatCompletionOptions);
-    } catch (primaryError: any) {
-      // If no fallbacks available, throw the error
-      if (!fallbackList || fallbackList.length === 0) {
-        throw primaryError;
-      }
-
-      // Try fallbacks
-      console.warn(
-        `[AI] Primary adapter "${adapter}" with model "${model}" failed for chatStream:`,
-        primaryError.message
-      );
-
-      yield* this.tryStreamWithFallback(
-        fallbackList,
-        (fallback) => {
-          return this.getAdapter(fallback.adapter).chatCompletionStream({
-            ...restOptions,
-            model: fallback.model,
-            stream: true,
-          } as ChatCompletionOptions);
-        },
-        "chatStream (after primary failure)"
-      );
-    }
-  }
-
-  /**
    * Stream chat with structured JSON chunks (supports tools and detailed token info)
    * Automatically executes tools if they have execute functions
    * Supports single adapter mode with optional fallbacks
@@ -439,14 +380,43 @@ export class AI<T extends AdapterMap = AdapterMap> {
 
     // If no tool executors, just stream normally (with fallback support on error)
     if (!hasToolExecutors) {
+      // Try primary adapter first
+      const errors: Array<{ adapter: string; model: string; error: Error }> = [];
+
       try {
-        yield* adapterInstance.chatStream({
+        // Manually iterate to catch errors during streaming
+        const iterator = adapterInstance.chatStream({
           ...restOptions,
           model: modelToUse,
           stream: true,
         } as ChatCompletionOptions);
+
+        let hasError = false;
+        let errorChunk: any = null;
+
+        for await (const chunk of iterator) {
+          // Check if this is an error chunk
+          if (chunk.type === "error") {
+            hasError = true;
+            errorChunk = chunk;
+            // Don't yield the error chunk yet - we'll try fallbacks first
+            break;
+          }
+          yield chunk;
+        }
+
+        // If we got an error chunk, throw it to trigger fallback
+        if (hasError && errorChunk) {
+          throw new Error(errorChunk.error.message || "Unknown error");
+        }
         return;
       } catch (primaryError: any) {
+        errors.push({
+          adapter: adapterToUse,
+          model: modelToUse,
+          error: primaryError instanceof Error ? primaryError : new Error(String(primaryError)),
+        });
+
         // Try fallbacks if available
         if (fallbackList && fallbackList.length > 0) {
           console.warn(
@@ -454,18 +424,55 @@ export class AI<T extends AdapterMap = AdapterMap> {
             primaryError.message
           );
 
-          yield* this.tryStreamWithFallback(
-            fallbackList,
-            (fallback) => {
-              return this.getAdapter(fallback.adapter).chatStream({
+          // Try each fallback
+          for (const fallback of fallbackList) {
+            try {
+              const fallbackIterator = this.getAdapter(fallback.adapter).chatStream({
                 ...restOptions,
                 model: fallback.model,
                 stream: true,
               } as ChatCompletionOptions);
-            },
-            "streamChat (after primary failure)"
+
+              let fallbackHasError = false;
+              let fallbackErrorChunk: any = null;
+
+              for await (const chunk of fallbackIterator) {
+                // Check if this is an error chunk
+                if (chunk.type === "error") {
+                  fallbackHasError = true;
+                  fallbackErrorChunk = chunk;
+                  break;
+                }
+                yield chunk;
+              }
+
+              // If we got an error chunk, throw it to try next fallback
+              if (fallbackHasError && fallbackErrorChunk) {
+                throw new Error(fallbackErrorChunk.error.message || "Unknown error");
+              }
+
+              return; // Success!
+            } catch (fallbackError: any) {
+              errors.push({
+                adapter: fallback.adapter as string,
+                model: fallback.model as string,
+                error: fallbackError instanceof Error ? fallbackError : new Error(String(fallbackError)),
+              });
+
+              console.warn(
+                `[AI] Fallback adapter "${fallback.adapter}" with model "${fallback.model}" failed for streamChat:`,
+                fallbackError.message
+              );
+            }
+          }
+
+          // All adapters failed
+          const errorMessage = errors
+            .map((e) => `  - ${e.adapter} (${e.model}): ${e.error.message}`)
+            .join("\n");
+          throw new Error(
+            `All adapters failed for streamChat:\n${errorMessage}`
           );
-          return;
         }
         throw primaryError;
       }
@@ -701,13 +708,27 @@ export class AI<T extends AdapterMap = AdapterMap> {
       : this.fallbacks;
 
     // Try primary adapter first
+    const errors: Array<{ adapter: string; model: string; error: Error }> = [];
+
     try {
-      yield* this.getAdapter(adapter).generateTextStream({
+      // Manually iterate to catch errors during streaming
+      const iterator = this.getAdapter(adapter).generateTextStream({
         ...restOptions,
         model,
         stream: true,
       } as TextGenerationOptions);
+
+      for await (const chunk of iterator) {
+        yield chunk;
+      }
+      return;
     } catch (primaryError: any) {
+      errors.push({
+        adapter,
+        model,
+        error: primaryError instanceof Error ? primaryError : new Error(String(primaryError)),
+      });
+
       // If no fallbacks available, throw the error
       if (!fallbackList || fallbackList.length === 0) {
         throw primaryError;
@@ -719,16 +740,38 @@ export class AI<T extends AdapterMap = AdapterMap> {
         primaryError.message
       );
 
-      yield* this.tryStreamWithFallback(
-        fallbackList,
-        (fallback) => {
-          return this.getAdapter(fallback.adapter).generateTextStream({
+      for (const fallback of fallbackList) {
+        try {
+          const fallbackIterator = this.getAdapter(fallback.adapter).generateTextStream({
             ...restOptions,
             model: fallback.model,
             stream: true,
           } as TextGenerationOptions);
-        },
-        "generateTextStream (after primary failure)"
+
+          for await (const chunk of fallbackIterator) {
+            yield chunk;
+          }
+          return; // Success!
+        } catch (fallbackError: any) {
+          errors.push({
+            adapter: fallback.adapter as string,
+            model: fallback.model as string,
+            error: fallbackError instanceof Error ? fallbackError : new Error(String(fallbackError)),
+          });
+
+          console.warn(
+            `[AI] Fallback adapter "${fallback.adapter}" with model "${fallback.model}" failed for generateTextStream:`,
+            fallbackError.message
+          );
+        }
+      }
+
+      // All adapters failed
+      const errorMessage = errors
+        .map((e) => `  - ${e.adapter} (${e.model}): ${e.error.message}`)
+        .join("\n");
+      throw new Error(
+        `All adapters failed for generateTextStream:\n${errorMessage}`
       );
     }
   }

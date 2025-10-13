@@ -97,7 +97,6 @@ export const Route = createFileRoute("/demo/api/tanchat")({
             ],
             messages: allMessages,
             temperature: 0.7,
-            tools,
             toolChoice: "auto",
             maxIterations: 5,
           });
