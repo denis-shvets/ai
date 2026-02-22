@@ -68,7 +68,7 @@ function DisputesFilters({ search }: DisputesFiltersProps) {
         options={Object.entries(DISPUTE_STATUS_MAP)}
       />
       <FilterSelect
-        id="resason"
+        id="reason"
         label="Reason"
         value={pendingReason}
         onChange={setPendingReason}

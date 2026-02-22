@@ -27,7 +27,7 @@ function SearchForm({ onChange, onSubmit, value, isLoading }: SearchFormProps) {
     if (transcript) {
       onChange(transcript)
     }
-  }, [transcript])
+  }, [transcript, onChange])
 
   const hasValue = Boolean(value.trim().length)
 
