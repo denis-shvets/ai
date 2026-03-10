@@ -1,4 +1,5 @@
 export { ChatClient } from './chat-client'
+export { RealtimeClient } from './realtime-client'
 export { GenerationClient } from './generation-client'
 export { VideoGenerationClient } from './video-generation-client'
 export type {
@@ -42,6 +43,13 @@ export type {
   ExtractToolOutput,
 } from './tool-types'
 export type { AnyClientTool } from '@tanstack/ai'
+export type {
+  RealtimeAdapter,
+  RealtimeConnection,
+  RealtimeClientOptions,
+  RealtimeClientState,
+  RealtimeStateChangeCallback,
+} from './realtime-types'
 export {
   fetchServerSentEvents,
   fetchHttpStream,

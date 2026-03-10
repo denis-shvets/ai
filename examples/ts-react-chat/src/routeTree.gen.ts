@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as RealtimeRouteImport } from './routes/realtime'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as GenerationsVideoRouteImport } from './routes/generations.video'
 import { Route as GenerationsTranscriptionRouteImport } from './routes/generations.transcription'
@@ -24,6 +25,11 @@ import { Route as ApiGenerateVideoRouteImport } from './routes/api.generate.vide
 import { Route as ApiGenerateSpeechRouteImport } from './routes/api.generate.speech'
 import { Route as ApiGenerateImageRouteImport } from './routes/api.generate.image'
 
+const RealtimeRoute = RealtimeRouteImport.update({
+  id: '/realtime',
+  path: '/realtime',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -98,6 +104,7 @@ const ApiGenerateImageRoute = ApiGenerateImageRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/realtime': typeof RealtimeRoute
   '/api/summarize': typeof ApiSummarizeRoute
   '/api/tanchat': typeof ApiTanchatRoute
   '/api/transcribe': typeof ApiTranscribeRoute
@@ -114,6 +121,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/realtime': typeof RealtimeRoute
   '/api/summarize': typeof ApiSummarizeRoute
   '/api/tanchat': typeof ApiTanchatRoute
   '/api/transcribe': typeof ApiTranscribeRoute
@@ -131,6 +139,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/realtime': typeof RealtimeRoute
   '/api/summarize': typeof ApiSummarizeRoute
   '/api/tanchat': typeof ApiTanchatRoute
   '/api/transcribe': typeof ApiTranscribeRoute
@@ -149,6 +158,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/realtime'
     | '/api/summarize'
     | '/api/tanchat'
     | '/api/transcribe'
@@ -165,6 +175,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/realtime'
     | '/api/summarize'
     | '/api/tanchat'
     | '/api/transcribe'
@@ -181,6 +192,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/realtime'
     | '/api/summarize'
     | '/api/tanchat'
     | '/api/transcribe'
@@ -198,6 +210,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  RealtimeRoute: typeof RealtimeRoute
   ApiSummarizeRoute: typeof ApiSummarizeRoute
   ApiTanchatRoute: typeof ApiTanchatRoute
   ApiTranscribeRoute: typeof ApiTranscribeRoute
@@ -215,6 +228,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/realtime': {
+      id: '/realtime'
+      path: '/realtime'
+      fullPath: '/realtime'
+      preLoaderRoute: typeof RealtimeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -318,6 +338,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  RealtimeRoute: RealtimeRoute,
   ApiSummarizeRoute: ApiSummarizeRoute,
   ApiTanchatRoute: ApiTanchatRoute,
   ApiTranscribeRoute: ApiTranscribeRoute,

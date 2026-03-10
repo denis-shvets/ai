@@ -1,10 +1,15 @@
 export { useChat } from './use-chat'
+export { useRealtimeChat } from './use-realtime-chat'
 export type {
   UseChatOptions,
   UseChatReturn,
   UIMessage,
   ChatRequestBody,
 } from './types'
+export type {
+  UseRealtimeChatOptions,
+  UseRealtimeChatReturn,
+} from './realtime-types'
 
 // Generation hooks
 export { useGeneration } from './use-generation'
